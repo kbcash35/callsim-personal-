@@ -436,15 +436,27 @@ function b64FromBuffer(buf) {
   return btoa(s);
 }
 
-async function openAudio() {
+/* iPhone Safari only grants the mic (and starts audio) when asked *synchronously inside a tap*.
+   So every tap that starts a call calls primeAudio() first, before any await. */
+let primed = null;
+function primeAudio() {
   // iOS 17+: treat this like a call (plays with silent switch on, enables voice processing).
   try { if (navigator.audioSession) navigator.audioSession.type = "play-and-record"; } catch {}
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  await ctx.resume();
-  call.ctx = ctx;
-  call.stream = await navigator.mediaDevices.getUserMedia({
+  const mic = navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
   });
+  mic.catch(() => {});                       // handled in openAudio
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  ctx.resume().catch(() => {});
+  primed = { mic, ctx };
+}
+
+async function openAudio() {
+  if (!primed) primeAudio();
+  const { mic, ctx } = primed; primed = null;
+  call.ctx = ctx;
+  call.stream = await mic;
+  if (ctx.state !== "running") await ctx.resume();
   const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: "application/javascript" }));
   await ctx.audioWorklet.addModule(url); URL.revokeObjectURL(url);
   const src = ctx.createMediaStreamSource(call.stream);
@@ -585,10 +597,10 @@ function showIncoming(c) {
   incomingTimeout = setTimeout(() => { stopRingtone(); releaseWakeLock(); renderHome(); show("v-home"); toast(`Missed call from ${c.name}`); }, 30000);
 }
 $("inc-decline").onclick = () => { clearTimeout(incomingTimeout); stopRingtone(); releaseWakeLock(); renderHome(); show("v-home"); };
-$("inc-accept").onclick = () => { clearTimeout(incomingTimeout); stopRingtone(); beginCall(incomingCaller, "incoming"); };
+$("inc-accept").onclick = () => { primeAudio(); clearTimeout(incomingTimeout); stopRingtone(); beginCall(incomingCaller, "incoming"); };
 
 /* ---------------- outgoing flow ---------------- */
-function startOutgoing(c) { if (requireKey()) beginCall(c, "outgoing"); }
+function startOutgoing(c) { if (requireKey()) { primeAudio(); beginCall(c, "outgoing"); } }
 
 function requireKey() {
   if (settings.apiKey) return true;
@@ -608,7 +620,14 @@ async function beginCall(c, direction) {
   show("v-call"); acquireWakeLock();
 
   try { await openAudio(); }
-  catch (e) { showCallError("Microphone unavailable: " + (e.message || e.name)); return endCall(true, 2600); }
+  catch (e) {
+    const msg = e && e.name === "NotAllowedError"
+      ? "Microphone blocked. In Safari tap aA → Website Settings → Microphone → Allow, then reload this page."
+      : "Microphone unavailable: " + ((e && (e.message || e.name)) || e);
+    showCallError(msg);
+    try { primed && primed.ctx.close(); } catch {} primed = null;
+    return endCall(true, 6000);
+  }
 
   if (direction === "incoming") {
     startTimer();
