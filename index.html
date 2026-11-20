@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Calls">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Calls</title>
+<style>
+  :root {
+    --bg: #000; --card: #1c1c1e; --card2: #2c2c2e; --text: #fff; --sub: #8e8e93;
+    --green: #30d158; --red: #ff453a; --blue: #0a84ff;
+    --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  input, textarea, select { font: inherit; color: var(--text); background: var(--card2); border: 0;
+    border-radius: 10px; padding: 12px; width: 100%; -webkit-user-select: text; user-select: text; }
+  textarea { resize: vertical; min-height: 70px; }
+  .view { position: fixed; inset: 0; display: none; flex-direction: column; overflow-y: auto; }
+  .view.on { display: flex; }
+
+  /* ---------- list / forms ---------- */
+  .top { padding: calc(var(--st) + 14px) 18px 8px; display: flex; align-items: center; justify-content: space-between; }
+  .top h1 { font-size: 32px; margin: 0; font-weight: 700; }
+  .link { color: var(--blue); font-size: 17px; padding: 6px 2px; }
+  .list { margin: 8px 16px; background: var(--card); border-radius: 12px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: .5px solid #38383a; }
+  .row:last-child { border-bottom: 0; }
+  .row .meta { flex: 1; min-width: 0; }
+  .row .name { font-size: 17px; }
+  .row .rel { font-size: 13px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .av { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(#a5a5aa, #78787d);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 18px;
+    background-size: cover; background-position: center; flex: none; }
+  .callbtn { width: 38px; height: 38px; border-radius: 50%; background: var(--green); display: flex; align-items: center; justify-content: center; }
+  .empty { color: var(--sub); text-align: center; padding: 40px 20px; }
+  .section { color: var(--sub); font-size: 13px; text-transform: uppercase; margin: 20px 32px 6px; }
+  .field { padding: 6px 16px; }
+  .field label { display: block; font-size: 13px; color: var(--sub); margin: 0 4px 6px; }
+  .hint { font-size: 12px; color: var(--sub); margin: 6px 4px 0; line-height: 1.4; }
+  .bigbtn { margin: 12px 16px; padding: 14px; border-radius: 12px; background: var(--card); color: var(--blue); font-size: 17px; text-align: center; }
+  .bigbtn.danger { color: var(--red); }
+  .bigbtn.primary { background: var(--blue); color: #fff; }
+  .photo-pick { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 10px 0; }
+  .photo-pick .av { width: 110px; height: 110px; font-size: 42px; }
+
+  /* ---------- action sheet ---------- */
+  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; z-index: 20; }
+  .sheet-bg.on { display: block; }
+  .sheet { position: absolute; left: 8px; right: 8px; bottom: calc(var(--sb) + 8px); }
+  .sheet .grp { background: rgba(44,44,46,.97); border-radius: 14px; overflow: hidden; margin-bottom: 8px; }
+  .sheet .t { color: var(--sub); font-size: 13px; text-align: center; padding: 12px; border-bottom: .5px solid #48484a; }
+  .sheet button { display: block; width: 100%; padding: 17px; font-size: 19px; color: var(--blue); border-bottom: .5px solid #48484a; }
+  .sheet button:last-child { border-bottom: 0; }
+  .sheet .cancel { font-weight: 600; }
+  .sheet .del { color: var(--red); }
+
+  /* ---------- call screens ---------- */
+  .call { background: #111; justify-content: space-between; overflow: hidden; }
+  .call .bgimg { position: absolute; inset: -40px; background-size: cover; background-position: center;
+    filter: blur(40px) brightness(.45) saturate(1.2); transform: scale(1.1); }
+  .call .bgfallback { position: absolute; inset: 0; background: linear-gradient(180deg, #3a3a3c 0%, #1c1c1e 55%, #0d0d0e 100%); }
+  .call > .inner { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: space-between;
+    height: 100%; padding: calc(var(--st) + 54px) 28px calc(var(--sb) + 46px); }
+  .who { text-align: center; }
+  .who .sub { font-size: 17px; color: rgba(255,255,255,.75); }
+  .who .nm { font-size: 34px; font-weight: 400; margin: 6px 0 4px; letter-spacing: .2px; }
+  .who .av { width: 96px; height: 96px; font-size: 40px; margin: 0 auto 14px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px 16px; justify-items: center; margin-bottom: 28px; }
+  .cb { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 13px; }
+  .cb .c { width: 76px; height: 76px; border-radius: 50%; background: rgba(255,255,255,.18);
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: center; transition: background .15s; }
+  .cb.active .c { background: #fff; }
+  .cb .c svg { width: 32px; height: 32px; fill: #fff; color: #fff; }
+  .cb.active .c svg { fill: #000; color: #000; }
+  .endrow { display: flex; justify-content: center; }
+  .round { width: 76px; height: 76px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .round svg { width: 36px; height: 36px; fill: #fff; }
+  .red { background: var(--red); } .green { background: var(--green); }
+  .rot { transform: rotate(135deg); }
+  .inc-actions { display: flex; justify-content: space-between; padding: 0 22px; }
+  .inc-actions .cb { font-size: 15px; }
+  .status-err { color: #ff9f0a; font-size: 14px; margin-top: 10px; -webkit-user-select: text; user-select: text; }
+  .pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .55; } }
+  .toast { position: fixed; left: 50%; bottom: calc(var(--sb) + 30px); transform: translateX(-50%); background: rgba(60,60,62,.95);
+    padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 50; display: none; max-width: 90%; text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- ================= HOME ================= -->
+<section class="view on" id="v-home">
+  <div class="top">
+    <button class="link" id="btn-settings">Settings</button>
+    <button class="link" id="btn-new" aria-label="New caller" style="font-size:28px;line-height:1">+</button>
+  </div>
+  <div class="top" style="padding-top:0"><h1>Callers</h1></div>
+  <div id="pending" class="hint" style="margin:0 20px;display:none"></div>
+  <div class="list" id="callers"></div>
+  <div class="empty" id="empty" style="display:none">No callers yet.<br>Tap + to create one.</div>
+  <div class="hint" style="margin:18px 22px;text-align:center">AI voice personas. Tap a name for options.</div>
+</section>
+
+<!-- ================= EDIT ================= -->
+<section class="view" id="v-edit">
+  <div class="top">
+    <button class="link" id="edit-cancel">Cancel</button>
+    <strong id="edit-title" style="font-size:17px">New Caller</strong>
+    <button class="link" id="edit-save" style="font-weight:600">Done</button>
+  </div>
+  <div class="photo-pick">
+    <div class="av" id="edit-av">?</div>
+    <div>
+      <button class="link" id="edit-photo-btn">Add Photo</button>
+      <button class="link" id="edit-photo-clear" style="color:var(--red);display:none;margin-left:14px">Remove</button>
+    </div>
+    <input type="file" id="edit-photo" accept="image/*" hidden>
+  </div>
+  <div class="field"><label>Name on screen</label><input id="f-name" placeholder="Mom"></div>
+  <div class="field"><label>Label under name</label><input id="f-label" placeholder="mobile"></div>
+  <div class="section">Persona</div>
+  <div class="field"><label>Who are they to you?</label><input id="f-rel" placeholder="my mother"></div>
+  <div class="field"><label>Personality / how they talk</label><input id="f-vibe" placeholder="warm, a bit worried, talks fast"></div>
+  <div class="field"><label>Scenario / why they're calling</label>
+    <textarea id="f-notes" placeholder="Needs me home soon — the dog got out and she can't find the spare key."></textarea>
+    <div class="hint">Add anything they should know: your name, inside jokes, how the call should go.</div></div>
+  <div class="field"><label>Voice</label><select id="f-voice"></select></div>
+  <div class="bigbtn danger" id="edit-delete" style="display:none">Delete Caller</div>
+  <div style="height:40px"></div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section class="view" id="v-settings">
+  <div class="top">
+    <button class="link" id="set-back">‹ Back</button>
+    <strong style="font-size:17px">Settings</strong>
+    <span style="width:50px"></span>
+  </div>
+  <div class="section">Gemini</div>
+  <div class="field"><label>API key</label><input id="s-key" type="password" autocomplete="off" placeholder="Paste your Gemini API key">
+    <div class="hint">Stored only on this device (browser storage). Never put it in the GitHub repo.</div></div>
+  <div class="field"><label>Model</label><input id="s-model" autocapitalize="off" autocorrect="off"></div>
+  <div class="field"><label>Max call length (minutes)</label><input id="s-max" type="number" min="1" max="30"></div>
+  <div class="field"><label>Your first name (optional)</label><input id="s-me" placeholder="So callers can use it"></div>
+  <div class="bigbtn" id="s-test">Test API Key</div>
+  <div class="bigbtn primary" id="s-save">Save</div>
+  <div class="section">Usage</div>
+  <div class="field"><div id="s-usage" class="hint" style="font-size:14px;line-height:1.6"></div>
+    <div class="hint">Rough estimate from the token counts Gemini reports. Check your real bill in Google AI Studio.</div></div>
+  <div style="height:40px"></div>
+</section>
+
+<!-- ================= INCOMING ================= -->
+<section class="view call" id="v-incoming">
+  <div class="bgfallback"></div><div class="bgimg" id="inc-bg"></div>
+  <div class="inner">
+    <div class="who">
+      <div class="sub" id="inc-label">mobile</div>
+      <div class="nm" id="inc-name">Mom</div>
+    </div>
+    <div>
+      <div class="inc-actions">
+        <button class="cb" id="inc-decline"><span class="round red"><svg viewBox="0 0 24 24" class="rot"><use href="#i-phone"/></svg></span>Decline</button>
+        <button class="cb" id="inc-accept"><span class="round green"><svg viewBox="0 0 24 24"><use href="#i-phone"/></svg></span>Accept</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= IN CALL ================= -->
+<section class="view call" id="v-call">
+  <div class="bgfallback"></div><div class="bgimg" id="call-bg"></div>
+  <div class="inner">
+    <div class="who">
+      <div class="av" id="call-av"></div>
+      <div class="nm" id="call-name">Mom</div>
+      <div class="sub" id="call-status">calling…</div>
+      <div class="status-err" id="call-err"></div>
+    </div>
+    <div>
+      <div class="grid">
+        <button class="cb" id="b-mute"><span class="c"><svg viewBox="0 0 24 24"><use href="#i-mute"/></svg></span>mute</button>
+        <button class="cb" id="b-keypad"><span class="c"><svg viewBox="0 0 24 24"><use href="#i-keypad"/></svg></span>keypad</button>
+        <button class="cb" id="b-speaker"><span class="c"><svg viewBox="0 0 24 24"><use href="#i-speaker"/></svg></span>speaker</button>
+        <button class="cb" id="b-add"><span class="c"><svg viewBox="0 0 24 24"><use href="#i-add"/></svg></span>add call</button>
+        <button class="cb" id="b-video"><span class="c"><svg viewBox="0 0 24 24"><use href="#i-video"/></svg></span>FaceTime</button>
+        <button class="cb" id="b-contacts"><span class="c"><svg viewBox="0 0 24 24"><use href="#i-person"/></svg></span>contacts</button>
+      </div>
+      <div class="endrow"><button class="round red" id="b-end" aria-label="End call"><svg viewBox="0 0 24 24" class="rot"><use href="#i-phone"/></svg></button></div>
+    </div>
+  </div>
+</section>
+
+<div class="sheet-bg" id="sheet"><div class="sheet" id="sheet-inner"></div></div>
+<div class="toast" id="toast"></div>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5.3-3a.8.8 0 0 1 1.6 0 6.9 6.9 0 0 1-6.1 6.9V21h-1.6v-3.1A6.9 6.9 0 0 1 5.1 11a.8.8 0 0 1 1.6 0 5.3 5.3 0 0 0 10.6 0z"/><path d="M4 3.5 20.5 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-keypad" viewBox="0 0 24 24"><g><circle cx="6" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="18" cy="4" r="2"/><circle cx="6" cy="10" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="18" cy="10" r="2"/><circle cx="6" cy="16" r="2"/><circle cx="12" cy="16" r="2"/><circle cx="18" cy="16" r="2"/><circle cx="12" cy="22" r="2"/></g></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M3 9.5v5h3.5L11 19V5L6.5 9.5H3zm11.5 2.5a4.5 4.5 0 0 0-2.3-3.9v7.8a4.5 4.5 0 0 0 2.3-3.9zM12.2 3.3v1.9a7 7 0 0 1 0 13.6v1.9a8.9 8.9 0 0 0 0-17.4z"/></symbol>
+  <symbol id="i-add" viewBox="0 0 24 24"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h8A2.5 2.5 0 0 1 16 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-8A2.5 2.5 0 0 1 3 16.5v-9zm14 2.6 4-2.6v9l-4-2.6z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><path d="M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4zm0 2c-3.6 0-8 1.8-8 4.6V21h16v-2.4c0-2.8-4.4-4.6-8-4.6z"/></symbol>
+</svg>
+
+<script>
+"use strict";
+/* =====================================================================
+   Personal AI caller — single file, no backend.
+   Browser mic (16 kHz PCM) ⇄ Gemini Live WebSocket ⇄ Web Audio playback (24 kHz).
+   ===================================================================== */
+
+const VOICES = [
+  ["Puck", "upbeat, male"], ["Charon", "deep, calm, male"], ["Fenrir", "excitable, male"], ["Orus", "firm, male"],
+  ["Kore", "firm, female"], ["Aoede", "breezy, female"], ["Leda", "youthful, female"], ["Zephyr", "bright, female"],
+];
+const DEFAULT_SETTINGS = { apiKey: "", model: "gemini-3.8-live", maxMin: 10, me: "" };
+const COMPRESSION_TRIGGER = 4000; // tokens; keeps per-turn re-billing low
+
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { toast("Storage full — try a smaller photo"); return false; } },
+};
+let settings = { ...DEFAULT_SETTINGS, ...store.get("cs.settings", {}) };
+let callers = store.get("cs.callers", null);
+if (!callers) {
+  callers = [{ id: crypto.randomUUID(), name: "Mom", label: "mobile", rel: "my mother",
+    vibe: "warm, a little worried, talks fast", notes: "Needs me to come home soon to help with something at the house.",
+    voice: "Aoede", photo: null }];
+  store.set("cs.callers", callers);
+}
+
+/* ---------------- navigation ---------------- */
+function show(id) {
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === id));
+}
+function toast(msg, ms = 2600) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.style.display = "none"), ms);
+}
+const initials = (n) => (n || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+function paintAvatar(el, c) {
+  if (c.photo) { el.style.backgroundImage = `url(${c.photo})`; el.textContent = ""; }
+  else { el.style.backgroundImage = ""; el.textContent = initials(c.name); }
+}
+
+/* ---------------- home ---------------- */
+function renderHome() {
+  const list = $("callers"); list.innerHTML = "";
+  $("empty").style.display = callers.length ? "none" : "block";
+  list.style.display = callers.length ? "block" : "none";
+  for (const c of callers) {
+    const row = document.createElement("div"); row.className = "row";
+    const av = document.createElement("div"); av.className = "av"; paintAvatar(av, c);
+    const meta = document.createElement("div"); meta.className = "meta";
+    meta.innerHTML = `<div class="name"></div><div class="rel"></div>`;
+    meta.querySelector(".name").textContent = c.name;
+    meta.querySelector(".rel").textContent = c.rel || c.label || "";
+    const call = document.createElement("button"); call.className = "callbtn"; call.setAttribute("aria-label", "Call now");
+    call.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="#fff"><use href="#i-phone"/></svg>`;
+    call.onclick = (e) => { e.stopPropagation(); startOutgoing(c); };
+    row.onclick = () => openSheet(c);
+    row.append(av, meta, call); list.append(row);
+  }
+}
+
+function openSheet(c) {
+  const s = $("sheet-inner"); s.innerHTML = "";
+  const g1 = document.createElement("div"); g1.className = "grp";
+  g1.innerHTML = `<div class="t"></div>`; g1.querySelector(".t").textContent = c.name;
+  const add = (label, fn, cls) => { const b = document.createElement("button"); b.textContent = label; if (cls) b.className = cls;
+    b.onclick = () => { closeSheet(); fn(); }; g1.append(b); };
+  add("Call Now (you call them)", () => startOutgoing(c));
+  add("Ring Me Now", () => scheduleIncoming(c, 0));
+  add("Ring Me in 10 seconds", () => scheduleIncoming(c, 10));
+  add("Ring Me in 1 minute", () => scheduleIncoming(c, 60));
+  add("Ring Me in 5 minutes", () => scheduleIncoming(c, 300));
+  add("Edit", () => openEdit(c));
+  const g2 = document.createElement("div"); g2.className = "grp";
+  const cancel = document.createElement("button"); cancel.textContent = "Cancel"; cancel.className = "cancel"; cancel.onclick = closeSheet;
+  g2.append(cancel); s.append(g1, g2);
+  $("sheet").classList.add("on");
+}
+function closeSheet() { $("sheet").classList.remove("on"); }
+$("sheet").onclick = (e) => { if (e.target.id === "sheet") closeSheet(); };
+
+/* ---------------- edit ---------------- */
+let editing = null, editPhoto = null;
+function openEdit(c) {
+  editing = c || null; editPhoto = c ? c.photo : null;
+  $("edit-title").textContent = c ? "Edit Caller" : "New Caller";
+  $("f-name").value = c?.name || ""; $("f-label").value = c?.label ?? "mobile";
+  $("f-rel").value = c?.rel || ""; $("f-vibe").value = c?.vibe || ""; $("f-notes").value = c?.notes || "";
+  $("f-voice").value = c?.voice || "Puck";
+  $("edit-delete").style.display = c ? "block" : "none";
+  refreshEditAvatar(); show("v-edit");
+}
+function refreshEditAvatar() {
+  paintAvatar($("edit-av"), { name: $("f-name").value, photo: editPhoto });
+  $("edit-photo-btn").textContent = editPhoto ? "Change Photo" : "Add Photo";
+  $("edit-photo-clear").style.display = editPhoto ? "inline" : "none";
+}
+$("f-voice").innerHTML = VOICES.map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join("");
+$("f-name").oninput = refreshEditAvatar;
+$("edit-photo-btn").onclick = () => $("edit-photo").click();
+$("edit-photo-clear").onclick = () => { editPhoto = null; refreshEditAvatar(); };
+$("edit-photo").onchange = async (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  try { editPhoto = await squareJpeg(file, 512); refreshEditAvatar(); } catch { toast("Couldn't read that image"); }
+};
+function squareJpeg(file, size) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(img.width, img.height); const cv = document.createElement("canvas");
+      cv.width = cv.height = size;
+      cv.getContext("2d").drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+      URL.revokeObjectURL(url); resolve(cv.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = reject; img.src = url;
+  });
+}
+$("edit-cancel").onclick = () => { renderHome(); show("v-home"); };
+$("edit-save").onclick = () => {
+  const name = $("f-name").value.trim();
+  if (!name) return toast("Give the caller a name");
+  const data = { name, label: $("f-label").value.trim(), rel: $("f-rel").value.trim(), vibe: $("f-vibe").value.trim(),
+    notes: $("f-notes").value.trim(), voice: $("f-voice").value, photo: editPhoto };
+  if (editing) Object.assign(editing, data); else callers.push({ id: crypto.randomUUID(), ...data });
+  store.set("cs.callers", callers); renderHome(); show("v-home");
+};
+$("edit-delete").onclick = () => {
+  if (!editing || !confirm(`Delete ${editing.name}?`)) return;
+  callers = callers.filter((c) => c !== editing); store.set("cs.callers", callers); renderHome(); show("v-home");
+};
+
+/* ---------------- settings ---------------- */
+function openSettings() {
+  $("s-key").value = settings.apiKey; $("s-model").value = settings.model;
+  $("s-max").value = settings.maxMin; $("s-me").value = settings.me;
+  const u = store.get("cs.usage", { calls: 0, seconds: 0, cost: 0, last: null });
+  $("s-usage").innerHTML = u.calls
+    ? `Calls: ${u.calls} · Talk time: ${fmt(u.seconds)} · Est. total: $${u.cost.toFixed(2)}` +
+      (u.last ? `<br>Last call: ${fmt(u.last.seconds)} · est. $${u.last.cost.toFixed(3)} (${u.last.turns} turns)` : "")
+    : "No calls yet.";
+  show("v-settings");
+}
+function readSettingsForm() {
+  return { apiKey: $("s-key").value.trim(), model: $("s-model").value.trim() || DEFAULT_SETTINGS.model,
+    maxMin: Math.min(30, Math.max(1, parseInt($("s-max").value, 10) || 10)), me: $("s-me").value.trim() };
+}
+$("btn-settings").onclick = openSettings;
+$("set-back").onclick = () => show("v-home");
+$("s-save").onclick = () => { settings = readSettingsForm(); store.set("cs.settings", settings); toast("Saved"); show("v-home"); };
+$("s-test").onclick = async () => {
+  const s = readSettingsForm(); if (!s.apiKey) return toast("Paste a key first");
+  toast("Testing…");
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(s.model)}?key=${encodeURIComponent(s.apiKey)}`);
+    if (r.ok) toast(`Key works ✓ (${s.model} found)`);
+    else { const j = await r.json().catch(() => ({})); toast(`Failed: ${j?.error?.message || r.status}`, 5000); }
+  } catch (e) { toast("Network error: " + e.message, 5000); }
+};
+$("btn-new").onclick = () => openEdit(null);
+
+/* ---------------- prompt ---------------- */
+function systemPrompt(c, direction) {
+  const me = settings.me ? `The user's name is ${settings.me}.` : "";
+  const who = direction === "incoming"
+    ? "YOU placed this call to the user."
+    : "The USER is calling YOU. Answer the phone naturally (e.g. 'Hello?' or 'Hey!') and let them lead.";
+  return [
+    `PERSONA: You are "${c.name}", ${c.rel || "someone the user knows"}. Personality: ${c.vibe || "natural and friendly"}. ${me}`,
+    c.notes ? `SCENARIO: ${c.notes}` : "",
+    `CALL: ${who}`,
+    "",
+    "RULES (phone call):",
+    "- You're on a live phone call. Sound like a real person on the phone, never like an assistant.",
+    "- Reply in 1–2 short sentences, usually under 20 words. Never monologue or list things.",
+    "- Casual phone speech: contractions, small fillers ('yeah', 'okay so', 'mm'), natural pauses.",
+    "- If the user goes quiet, wait or ask one short question.",
+    "- Never read out URLs, long numbers, or formatting.",
+    "",
+    "GUARDRAILS:",
+    "- If the user sincerely asks whether they're talking to an AI, say yes briefly, then carry on if they want.",
+    "- If the user says they're in real danger, tell them to contact local emergency services right away.",
+  ].join("\n");
+}
+
+/* =====================================================================
+   AUDIO + GEMINI LIVE
+   ===================================================================== */
+const CAPTURE_WORKLET = `
+class Capture16k extends AudioWorkletProcessor {
+  constructor() { super(); this.ratio = sampleRate / 16000; this.t = 0; this.out = new Int16Array(640); this.n = 0; }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    let t = this.t;
+    while (t < ch.length) {
+      const i = t | 0, f = t - i, a = ch[i], b = i + 1 < ch.length ? ch[i + 1] : a;
+      let s = a + (b - a) * f; s = s < -1 ? -1 : s > 1 ? 1 : s;
+      this.out[this.n++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      if (this.n === this.out.length) { this.port.postMessage(this.out.buffer.slice(0)); this.n = 0; }
+      t += this.ratio;
+    }
+    this.t = t - ch.length;
+    return true;
+  }
+}
+registerProcessor("capture-16k", Capture16k);`;
+
+const call = {
+  active: false, caller: null, direction: null, ws: null, ready: false,
+  ctx: null, stream: null, node: null, sink: null, sources: new Set(), nextTime: 0, holdUntil: 0,
+  muted: false, startedAt: 0, timer: null, maxTimer: null, wakeLock: null, ringNodes: [],
+  gotAudio: false, usage: { prompt: 0, response: 0, turns: 0 }, ending: false,
+};
+
+function b64FromBuffer(buf) {
+  const bytes = new Uint8Array(buf); let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+async function openAudio() {
+  // iOS 17+: treat this like a call (plays with silent switch on, enables voice processing).
+  try { if (navigator.audioSession) navigator.audioSession.type = "play-and-record"; } catch {}
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  call.ctx = ctx;
+  call.stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+  });
+  const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: "application/javascript" }));
+  await ctx.audioWorklet.addModule(url); URL.revokeObjectURL(url);
+  const src = ctx.createMediaStreamSource(call.stream);
+  const node = new AudioWorkletNode(ctx, "capture-16k");
+  const sink = ctx.createGain(); sink.gain.value = 0;      // keeps the worklet pulled by the graph, silently
+  src.connect(node); node.connect(sink); sink.connect(ctx.destination);
+  node.port.onmessage = (e) => {
+    if (!call.ready || call.muted || !call.ws || call.ws.readyState !== 1) return;
+    call.ws.send(`{"realtimeInput":{"audio":{"data":"${b64FromBuffer(e.data)}","mimeType":"audio/pcm;rate=16000"}}}`);
+  };
+  call.node = node; call.sink = sink;
+}
+
+function playPcm24k(b64) {
+  const ctx = call.ctx; if (!ctx) return;
+  const bin = atob(b64); const len = bin.length >> 1; if (!len) return;
+  const f32 = new Float32Array(len);
+  for (let i = 0; i < len; i++) {
+    let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+    if (v & 0x8000) v -= 0x10000;
+    f32[i] = v / 32768;
+  }
+  const buf = ctx.createBuffer(1, len, 24000); buf.copyToChannel(f32, 0);
+  const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination);
+  const t = Math.max(ctx.currentTime + 0.03, call.nextTime, call.holdUntil);
+  s.start(t); call.nextTime = t + buf.duration;
+  call.sources.add(s); s.onended = () => call.sources.delete(s);
+  if (!call.gotAudio) { call.gotAudio = true; onAnswered(t); }
+}
+
+function flushPlayback() {          // barge-in: stop the AI mid-word
+  for (const s of call.sources) { try { s.stop(); } catch {} }
+  call.sources.clear(); call.nextTime = 0;
+}
+
+function connectGemini() {
+  const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(settings.apiKey)}`;
+  const ws = new WebSocket(url); call.ws = ws;
+  const c = call.caller;
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ setup: {
+      model: `models/${settings.model}`,
+      generationConfig: { responseModalities: ["AUDIO"],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: c.voice || "Puck" } } } },
+      systemInstruction: { parts: [{ text: systemPrompt(c, call.direction) }] },
+      contextWindowCompression: { triggerTokens: COMPRESSION_TRIGGER, slidingWindow: { targetTokens: COMPRESSION_TRIGGER / 2 } },
+      realtimeInputConfig: { automaticActivityDetection: {
+        startOfSpeechSensitivity: "START_SENSITIVITY_HIGH", endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
+        prefixPaddingMs: 100, silenceDurationMs: 500 } },
+    } }));
+  };
+  ws.onmessage = async (ev) => {
+    const text = typeof ev.data === "string" ? ev.data : await ev.data.text();
+    let m; try { m = JSON.parse(text); } catch { return; }
+    if (m.setupComplete) {
+      call.ready = true;
+      const kick = call.direction === "incoming"
+        ? "[The call just connected — you called them. Greet them the way your persona naturally would, in one short sentence, then get to why you're calling.]"
+        : "[Your phone is ringing and you just picked up. Answer it naturally in a few words.]";
+      ws.send(JSON.stringify({ realtimeInput: { text: kick } }));
+    }
+    const sc = m.serverContent;
+    if (sc) {
+      if (sc.interrupted) flushPlayback();
+      for (const p of sc.modelTurn?.parts || []) if (p.inlineData?.data) playPcm24k(p.inlineData.data);
+      if (sc.turnComplete) call.usage.turns++;
+    }
+    if (m.usageMetadata) {
+      call.usage.prompt += m.usageMetadata.promptTokenCount || 0;
+      call.usage.response += m.usageMetadata.responseTokenCount || 0;
+    }
+    if (m.goAway) console.warn("goAway", m.goAway);
+  };
+  ws.onerror = () => {};
+  ws.onclose = (ev) => {
+    if (!call.active || call.ending) return;
+    const why = ev.reason || `connection closed (${ev.code})`;
+    if (!call.gotAudio) { showCallError(friendlyError(why)); endCall(true, 2600); }
+    else endCall(true);
+  };
+}
+
+function friendlyError(r) {
+  if (/API key|PERMISSION|401|403/i.test(r)) return "Call failed: check your API key in Settings.";
+  if (/not found|404|model/i.test(r)) return `Call failed: model "${settings.model}" not available. ${r}`;
+  if (/quota|429|RESOURCE_EXHAUSTED/i.test(r)) return "Call failed: quota or rate limit reached.";
+  return "Call failed: " + r;
+}
+
+/* ---------------- tones (generic, synthesized) ---------------- */
+function tone(ctx, freqs, start, dur, gain = 0.08) {
+  const g = ctx.createGain(); g.gain.setValueAtTime(0, start);
+  g.gain.linearRampToValueAtTime(gain, start + 0.02); g.gain.setValueAtTime(gain, start + dur - 0.03);
+  g.gain.linearRampToValueAtTime(0, start + dur); g.connect(ctx.destination);
+  for (const f of freqs) { const o = ctx.createOscillator(); o.frequency.value = f; o.connect(g); o.start(start); o.stop(start + dur); call.ringNodes.push(o); }
+}
+function stopTones() { for (const o of call.ringNodes) { try { o.stop(); } catch {} } call.ringNodes = []; }
+
+let ringCtx = null, ringLoop = null;
+function startRingtone() {
+  try {
+    ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)();
+    ringCtx.resume();
+    const once = () => {
+      const t = ringCtx.currentTime + 0.05;
+      for (let k = 0; k < 2; k++) for (let j = 0; j < 8; j++)
+        tone(ringCtx, [j % 2 ? 1320 : 1046], t + k * 1.1 + j * 0.06, 0.06, 0.12);
+    };
+    once(); ringLoop = setInterval(once, 3000);
+  } catch {}
+  if (navigator.vibrate) navigator.vibrate([400, 200, 400, 2000, 400, 200, 400]);
+}
+function stopRingtone() { clearInterval(ringLoop); ringLoop = null; stopTones(); if (navigator.vibrate) navigator.vibrate(0); }
+
+/* ---------------- incoming flow ---------------- */
+let pendingTimer = null, pendingTick = null;
+function scheduleIncoming(c, seconds) {
+  if (!requireKey()) return;
+  clearTimeout(pendingTimer); clearInterval(pendingTick);
+  // Unlock audio now while we have a user gesture (iOS needs this for the ringtone later).
+  ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)(); ringCtx.resume();
+  if (!seconds) return showIncoming(c);
+  acquireWakeLock();
+  const due = Date.now() + seconds * 1000; const p = $("pending"); p.style.display = "block";
+  const tick = () => { const left = Math.max(0, Math.round((due - Date.now()) / 1000));
+    p.innerHTML = `${escapeHtml(c.name)} will call in ${left}s · keep this app open · <a href="#" id="pend-cancel" style="color:var(--blue)">cancel</a>`;
+    $("pend-cancel").onclick = (e) => { e.preventDefault(); clearTimeout(pendingTimer); clearInterval(pendingTick); p.style.display = "none"; releaseWakeLock(); }; };
+  tick(); pendingTick = setInterval(tick, 1000);
+  pendingTimer = setTimeout(() => { clearInterval(pendingTick); p.style.display = "none"; showIncoming(c); }, seconds * 1000);
+}
+let incomingTimeout = null, incomingCaller = null;
+function showIncoming(c) {
+  incomingCaller = c;
+  $("inc-name").textContent = c.name; $("inc-label").textContent = c.label || "mobile";
+  $("inc-bg").style.backgroundImage = c.photo ? `url(${c.photo})` : "";
+  show("v-incoming"); startRingtone(); acquireWakeLock();
+  clearTimeout(incomingTimeout);
+  incomingTimeout = setTimeout(() => { stopRingtone(); releaseWakeLock(); renderHome(); show("v-home"); toast(`Missed call from ${c.name}`); }, 30000);
+}
+$("inc-decline").onclick = () => { clearTimeout(incomingTimeout); stopRingtone(); releaseWakeLock(); renderHome(); show("v-home"); };
+$("inc-accept").onclick = () => { clearTimeout(incomingTimeout); stopRingtone(); beginCall(incomingCaller, "incoming"); };
+
+/* ---------------- outgoing flow ---------------- */
+function startOutgoing(c) { if (requireKey()) beginCall(c, "outgoing"); }
+
+function requireKey() {
+  if (settings.apiKey) return true;
+  toast("Add your Gemini API key in Settings first"); openSettings(); return false;
+}
+
+/* ---------------- call lifecycle ---------------- */
+async function beginCall(c, direction) {
+  Object.assign(call, { active: true, ending: false, caller: c, direction, ready: false, muted: false, gotAudio: false,
+    nextTime: 0, holdUntil: 0, startedAt: 0, usage: { prompt: 0, response: 0, turns: 0 } });
+  $("call-name").textContent = c.name; paintAvatar($("call-av"), c);
+  $("call-bg").style.backgroundImage = c.photo ? `url(${c.photo})` : "";
+  $("call-err").textContent = "";
+  document.querySelectorAll("#v-call .cb").forEach((b) => b.classList.remove("active"));
+  $("call-status").textContent = direction === "incoming" ? "00:00" : "calling…";
+  $("call-status").classList.toggle("pulse", direction === "outgoing");
+  show("v-call"); acquireWakeLock();
+
+  try { await openAudio(); }
+  catch (e) { showCallError("Microphone unavailable: " + (e.message || e.name)); return endCall(true, 2600); }
+
+  if (direction === "incoming") {
+    startTimer();
+  } else {
+    // A couple of rings before they "pick up". AI audio is held until the ringback finishes.
+    const t0 = call.ctx.currentTime + 0.1;
+    tone(call.ctx, [440, 480], t0, 2.0, 0.05);
+    call.holdUntil = t0 + 3.4;
+  }
+  connectGemini();
+  call.maxTimer = setTimeout(() => endCall(false), settings.maxMin * 60 * 1000);
+}
+
+function onAnswered() {
+  if (call.direction === "outgoing") {
+    const wait = Math.max(0, (call.holdUntil - call.ctx.currentTime) * 1000);
+    setTimeout(() => { if (call.active) { $("call-status").classList.remove("pulse"); startTimer(); } }, wait);
+  }
+}
+
+function startTimer() {
+  call.startedAt = Date.now(); clearInterval(call.timer);
+  const upd = () => { $("call-status").textContent = fmt((Date.now() - call.startedAt) / 1000); };
+  upd(); call.timer = setInterval(upd, 1000);
+}
+
+function showCallError(msg) { $("call-err").textContent = msg; $("call-status").classList.remove("pulse"); }
+
+function endCall(remote = false, delay = 1200) {
+  if (!call.active || call.ending) return;
+  call.ending = true;
+  clearTimeout(call.maxTimer); clearInterval(call.timer);
+  const seconds = call.startedAt ? (Date.now() - call.startedAt) / 1000 : 0;
+  try { call.ws && call.ws.close(); } catch {}
+  flushPlayback(); stopTones();
+  try { call.node && (call.node.port.onmessage = null); } catch {}
+  try { call.stream && call.stream.getTracks().forEach((t) => t.stop()); } catch {}
+  try { call.ctx && call.ctx.close(); } catch {}
+  call.ws = null; call.ctx = null; call.stream = null; call.node = null; call.ready = false;
+  releaseWakeLock();
+  if (seconds > 0) recordUsage(seconds);
+  $("call-status").classList.remove("pulse");
+  $("call-status").textContent = "Call Ended";
+  setTimeout(() => { call.active = false; renderHome(); show("v-home"); }, delay);
+}
+
+function recordUsage(seconds) {
+  // Rough: treat prompt tokens as audio input ($3/M) and response tokens as audio output ($12/M).
+  const cost = call.usage.prompt * 3e-6 + call.usage.response * 12e-6;
+  const u = store.get("cs.usage", { calls: 0, seconds: 0, cost: 0, last: null });
+  u.calls++; u.seconds += seconds; u.cost += cost;
+  u.last = { seconds, cost, turns: call.usage.turns, prompt: call.usage.prompt, response: call.usage.response };
+  store.set("cs.usage", u);
+}
+
+/* ---------------- in-call buttons ---------------- */
+$("b-end").onclick = () => endCall(false);
+$("b-mute").onclick = (e) => { call.muted = !call.muted; e.currentTarget.classList.toggle("active", call.muted); };
+// Cosmetic toggles — a web page can't switch audio outputs, but the screen should look normal.
+for (const id of ["b-speaker", "b-keypad"]) $(id).onclick = (e) => e.currentTarget.classList.toggle("active");
+for (const id of ["b-add", "b-video", "b-contacts"]) $(id).onclick = () => {};
+
+/* ---------------- utils ---------------- */
+function fmt(sec) { sec = Math.max(0, Math.floor(sec)); const m = Math.floor(sec / 60), s = sec % 60;
+  return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
+function escapeHtml(s) { return s.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])); }
+async function acquireWakeLock() { try { if ("wakeLock" in navigator && !call.wakeLock) call.wakeLock = await navigator.wakeLock.request("screen"); } catch {} }
+function releaseWakeLock() { try { call.wakeLock && call.wakeLock.release(); } catch {} call.wakeLock = null; }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && (call.active || pendingTimer)) { call.wakeLock = null; acquireWakeLock(); } });
+
+renderHome();
+if (!settings.apiKey) setTimeout(() => toast("Tap Settings to add your Gemini API key"), 600);
+</script>
+</body>
+</html>
