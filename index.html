@@ -63,6 +63,10 @@
   .sheet button:last-child { border-bottom: 0; }
   .sheet .cancel { font-weight: 600; }
   .sheet .del { color: var(--red); }
+  .seg { display: flex; margin: 10px 12px; background: #3a3a3c; border-radius: 9px; padding: 2px; }
+  .sheet .seg button { flex: 1; padding: 8px 4px; font-size: 14px; color: #fff; border: 0; border-radius: 7px; }
+  .sheet .seg button.on { background: #636366; font-weight: 600; }
+  .seg-hint { color: var(--sub); font-size: 12px; text-align: center; padding: 0 12px 10px; border-bottom: .5px solid #48484a; }
 
   /* ---------- call screens ---------- */
   .call { background: #111; justify-content: space-between; overflow: hidden; }
@@ -134,7 +138,10 @@
   <div class="field"><label>Scenario / why they're calling</label>
     <textarea id="f-notes" placeholder="Needs me home soon — the dog got out and she can't find the spare key."></textarea>
     <div class="hint">Add anything they should know: your name, inside jokes, how the call should go.</div></div>
-  <div class="field"><label>Voice</label><select id="f-voice"></select></div>
+  <div class="field"><label>Voice</label><select id="f-voice"></select>
+    <div class="hint">The voice sets the sound. Use the field below to shape the accent and delivery.</div></div>
+  <div class="field"><label>Accent / speaking style (optional)</label><input id="f-accent" placeholder="e.g. Toronto accent, laid-back, laughs easily">
+    <div class="hint">Describe it the way you'd describe the real person: region, energy, pace, slang they use.</div></div>
   <div class="bigbtn danger" id="edit-delete" style="display:none">Delete Caller</div>
   <div style="height:40px"></div>
 </section>
@@ -151,6 +158,8 @@
     <div class="hint">Stored only on this device (browser storage). Never put it in the GitHub repo.</div></div>
   <div class="field"><label>Model</label><input id="s-model" autocapitalize="off" autocorrect="off"></div>
   <div class="field"><label>Max call length (minutes)</label><input id="s-max" type="number" min="1" max="30"></div>
+  <div class="field"><label>Call language</label><input id="s-lang" placeholder="English">
+    <div class="hint">Callers always speak this language. Default: English.</div></div>
   <div class="field"><label>Your first name (optional)</label><input id="s-me" placeholder="So callers can use it"></div>
   <div class="bigbtn" id="s-test">Test API Key</div>
   <div class="bigbtn primary" id="s-save">Save</div>
@@ -221,11 +230,16 @@
    Browser mic (16 kHz PCM) ⇄ Gemini Live WebSocket ⇄ Web Audio playback (24 kHz).
    ===================================================================== */
 
-const VOICES = [
-  ["Puck", "upbeat, male"], ["Charon", "deep, calm, male"], ["Fenrir", "excitable, male"], ["Orus", "firm, male"],
-  ["Kore", "firm, female"], ["Aoede", "breezy, female"], ["Leda", "youthful, female"], ["Zephyr", "bright, female"],
-];
-const DEFAULT_SETTINGS = { apiKey: "", model: "gemini-3.8-live", maxMin: 10, me: "" };
+// Gemini's 30 prebuilt voices. Gender is approximate (how they generally sound).
+const VOICES = {
+  Female: [["Sulafat","warm"],["Achernar","soft"],["Vindemiatrix","gentle"],["Aoede","breezy"],["Callirrhoe","easy-going"],
+    ["Kore","firm"],["Leda","youthful"],["Zephyr","bright"],["Autonoe","bright"],["Despina","smooth"],["Erinome","clear"],
+    ["Laomedeia","upbeat"],["Gacrux","mature"],["Pulcherrima","forward"]],
+  Male: [["Achird","friendly"],["Zubenelgenubi","casual"],["Umbriel","easy-going"],["Puck","upbeat"],["Charon","informative"],
+    ["Fenrir","excitable"],["Orus","firm"],["Enceladus","breathy"],["Iapetus","clear"],["Algieba","smooth"],["Algenib","gravelly"],
+    ["Rasalgethi","informative"],["Alnilam","firm"],["Schedar","even"],["Sadachbia","lively"],["Sadaltager","knowledgeable"]],
+};
+const DEFAULT_SETTINGS = { apiKey: "", model: "gemini-3.8-live", maxMin: 10, me: "", language: "English" };
 const COMPRESSION_TRIGGER = 4000; // tokens; keeps per-turn re-billing low
 
 const $ = (id) => document.getElementById(id);
@@ -276,10 +290,22 @@ function renderHome() {
   }
 }
 
+let callMode = store.get("cs.mode", "ai");
 function openSheet(c) {
   const s = $("sheet-inner"); s.innerHTML = "";
   const g1 = document.createElement("div"); g1.className = "grp";
-  g1.innerHTML = `<div class="t"></div>`; g1.querySelector(".t").textContent = c.name;
+  g1.innerHTML = `<div class="t"></div>
+    <div class="seg"><button data-m="ai">AI voice</button><button data-m="screen">Screen only · free</button></div>
+    <div class="seg-hint"></div>`;
+  g1.querySelector(".t").textContent = c.name;
+  const paintSeg = () => {
+    g1.querySelectorAll(".seg button").forEach((b) => b.classList.toggle("on", b.dataset.m === callMode));
+    g1.querySelector(".seg-hint").textContent = callMode === "screen"
+      ? "Silent call screen with a running timer. No mic, no AI, no cost."
+      : "Live AI conversation (uses your Gemini key).";
+  };
+  g1.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => { callMode = b.dataset.m; store.set("cs.mode", callMode); paintSeg(); }));
+  paintSeg();
   const add = (label, fn, cls) => { const b = document.createElement("button"); b.textContent = label; if (cls) b.className = cls;
     b.onclick = () => { closeSheet(); fn(); }; g1.append(b); };
   add("Call Now (you call them)", () => startOutgoing(c));
@@ -303,7 +329,7 @@ function openEdit(c) {
   $("edit-title").textContent = c ? "Edit Caller" : "New Caller";
   $("f-name").value = c?.name || ""; $("f-label").value = c?.label ?? "mobile";
   $("f-rel").value = c?.rel || ""; $("f-vibe").value = c?.vibe || ""; $("f-notes").value = c?.notes || "";
-  $("f-voice").value = c?.voice || "Puck";
+  $("f-voice").value = c?.voice || "Puck"; $("f-accent").value = c?.accent || "";
   $("edit-delete").style.display = c ? "block" : "none";
   refreshEditAvatar(); show("v-edit");
 }
@@ -312,7 +338,8 @@ function refreshEditAvatar() {
   $("edit-photo-btn").textContent = editPhoto ? "Change Photo" : "Add Photo";
   $("edit-photo-clear").style.display = editPhoto ? "inline" : "none";
 }
-$("f-voice").innerHTML = VOICES.map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join("");
+$("f-voice").innerHTML = Object.entries(VOICES).map(([g, list]) =>
+  `<optgroup label="${g}">` + list.map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join("") + `</optgroup>`).join("");
 $("f-name").oninput = refreshEditAvatar;
 $("edit-photo-btn").onclick = () => $("edit-photo").click();
 $("edit-photo-clear").onclick = () => { editPhoto = null; refreshEditAvatar(); };
@@ -338,7 +365,7 @@ $("edit-save").onclick = () => {
   const name = $("f-name").value.trim();
   if (!name) return toast("Give the caller a name");
   const data = { name, label: $("f-label").value.trim(), rel: $("f-rel").value.trim(), vibe: $("f-vibe").value.trim(),
-    notes: $("f-notes").value.trim(), voice: $("f-voice").value, photo: editPhoto };
+    notes: $("f-notes").value.trim(), voice: $("f-voice").value, accent: $("f-accent").value.trim(), photo: editPhoto };
   if (editing) Object.assign(editing, data); else callers.push({ id: crypto.randomUUID(), ...data });
   store.set("cs.callers", callers); renderHome(); show("v-home");
 };
@@ -350,7 +377,7 @@ $("edit-delete").onclick = () => {
 /* ---------------- settings ---------------- */
 function openSettings() {
   $("s-key").value = settings.apiKey; $("s-model").value = settings.model;
-  $("s-max").value = settings.maxMin; $("s-me").value = settings.me;
+  $("s-max").value = settings.maxMin; $("s-me").value = settings.me; $("s-lang").value = settings.language || "English";
   const u = store.get("cs.usage", { calls: 0, seconds: 0, cost: 0, last: null });
   $("s-usage").innerHTML = u.calls
     ? `Calls: ${u.calls} · Talk time: ${fmt(u.seconds)} · Est. total: $${u.cost.toFixed(2)}` +
@@ -360,7 +387,8 @@ function openSettings() {
 }
 function readSettingsForm() {
   return { apiKey: $("s-key").value.trim(), model: $("s-model").value.trim() || DEFAULT_SETTINGS.model,
-    maxMin: Math.min(30, Math.max(1, parseInt($("s-max").value, 10) || 10)), me: $("s-me").value.trim() };
+    maxMin: Math.min(30, Math.max(1, parseInt($("s-max").value, 10) || 10)), me: $("s-me").value.trim(),
+    language: $("s-lang").value.trim() || "English" };
 }
 $("btn-settings").onclick = openSettings;
 $("set-back").onclick = () => show("v-home");
@@ -378,6 +406,7 @@ $("btn-new").onclick = () => openEdit(null);
 
 /* ---------------- prompt ---------------- */
 function systemPrompt(c, direction) {
+  const lang = settings.language || "English";
   const me = settings.me ? `The user's name is ${settings.me}.` : "";
   const who = direction === "incoming"
     ? "YOU placed this call to the user."
@@ -386,6 +415,9 @@ function systemPrompt(c, direction) {
     `PERSONA: You are "${c.name}", ${c.rel || "someone the user knows"}. Personality: ${c.vibe || "natural and friendly"}. ${me}`,
     c.notes ? `SCENARIO: ${c.notes}` : "",
     `CALL: ${who}`,
+    c.accent ? `VOICE STYLE: Speak with this accent and delivery: ${c.accent}. Keep it natural and consistent, never exaggerated.` : "",
+    "",
+    `LANGUAGE: You MUST speak only ${lang} for the entire call, no matter what. If the user's audio is unclear or sounds like another language, still reply in ${lang}, e.g. "Sorry, what was that?"`,
     "",
     "RULES (phone call):",
     "- You're on a live phone call. Sound like a real person on the phone, never like an assistant.",
@@ -574,7 +606,7 @@ function stopRingtone() { clearInterval(ringLoop); ringLoop = null; stopTones();
 /* ---------------- incoming flow ---------------- */
 let pendingTimer = null, pendingTick = null;
 function scheduleIncoming(c, seconds) {
-  if (!requireKey()) return;
+  if (callMode !== "screen" && !requireKey()) return;
   clearTimeout(pendingTimer); clearInterval(pendingTick);
   // Unlock audio now while we have a user gesture (iOS needs this for the ringtone later).
   ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)(); ringCtx.resume();
@@ -597,10 +629,13 @@ function showIncoming(c) {
   incomingTimeout = setTimeout(() => { stopRingtone(); releaseWakeLock(); renderHome(); show("v-home"); toast(`Missed call from ${c.name}`); }, 30000);
 }
 $("inc-decline").onclick = () => { clearTimeout(incomingTimeout); stopRingtone(); releaseWakeLock(); renderHome(); show("v-home"); };
-$("inc-accept").onclick = () => { primeAudio(); clearTimeout(incomingTimeout); stopRingtone(); beginCall(incomingCaller, "incoming"); };
+$("inc-accept").onclick = () => { if (callMode !== "screen") primeAudio(); clearTimeout(incomingTimeout); stopRingtone(); beginCall(incomingCaller, "incoming"); };
 
 /* ---------------- outgoing flow ---------------- */
-function startOutgoing(c) { if (requireKey()) { primeAudio(); beginCall(c, "outgoing"); } }
+function startOutgoing(c) {
+  if (callMode === "screen") return beginCall(c, "outgoing");
+  if (requireKey()) { primeAudio(); beginCall(c, "outgoing"); }
+}
 
 function requireKey() {
   if (settings.apiKey) return true;
@@ -618,6 +653,14 @@ async function beginCall(c, direction) {
   $("call-status").textContent = direction === "incoming" ? "00:00" : "calling…";
   $("call-status").classList.toggle("pulse", direction === "outgoing");
   show("v-call"); acquireWakeLock();
+  call.screenOnly = callMode === "screen";
+
+  if (call.screenOnly) {
+    // No mic, no network, no cost. Outgoing shows "calling…" briefly, like a real call connecting.
+    if (direction === "incoming") startTimer();
+    else setTimeout(() => { if (call.active && !call.ending) { $("call-status").classList.remove("pulse"); startTimer(); } }, 3500);
+    return;
+  }
 
   try { await openAudio(); }
   catch (e) {
@@ -668,7 +711,7 @@ function endCall(remote = false, delay = 1200) {
   try { call.ctx && call.ctx.close(); } catch {}
   call.ws = null; call.ctx = null; call.stream = null; call.node = null; call.ready = false;
   releaseWakeLock();
-  if (seconds > 0) recordUsage(seconds);
+  if (seconds > 0 && !call.screenOnly) recordUsage(seconds);
   $("call-status").classList.remove("pulse");
   $("call-status").textContent = "Call Ended";
   setTimeout(() => { call.active = false; renderHome(); show("v-home"); }, delay);
