@@ -18,14 +18,14 @@
     --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  html, body { margin: 0; min-height: 100lvh; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
     -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
   button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
   input, textarea, select { font: inherit; color: var(--text); background: var(--card2); border: 0;
     border-radius: 10px; padding: 12px; width: 100%; -webkit-user-select: text; user-select: text; }
   textarea { resize: vertical; min-height: 70px; }
-  .view { position: fixed; inset: 0; display: none; flex-direction: column; overflow-y: auto; }
+  .view { position: fixed; top: 0; left: 0; right: 0; height: 100vh; height: 100lvh; display: none; flex-direction: column; overflow-y: auto; }
   .view.on { display: flex; }
 
   /* ---------- list / forms ---------- */
@@ -70,11 +70,11 @@
 
   /* ---------- call screens ---------- */
   .call { background: #111; justify-content: space-between; overflow: hidden; }
-  .call .bgimg { position: absolute; inset: -40px; background-size: cover; background-position: center;
+  .call .bgimg { position: fixed; top: -40px; left: -40px; right: -40px; bottom: -200px; background-size: cover; background-position: center;
     filter: blur(40px) brightness(.45) saturate(1.2); transform: scale(1.1); }
-  .call .bgfallback { position: absolute; inset: 0; background: linear-gradient(180deg, #3a3a3c 0%, #1c1c1e 55%, #0d0d0e 100%); }
+  .call .bgfallback { position: fixed; top: 0; left: 0; right: 0; bottom: -200px; background: linear-gradient(180deg, #3a3a3c 0%, #1c1c1e 55%, #0d0d0e 100%); }
   .call > .inner { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: space-between;
-    height: 100%; padding: calc(var(--st) + 54px) 28px calc(var(--sb) + 46px); }
+    height: 100%; padding: calc(var(--st) + 54px) 28px calc(var(--sb) + 30px); }
   .who { text-align: center; }
   .who .sub { font-size: 17px; color: rgba(255,255,255,.75); }
   .who .nm { font-size: 34px; font-weight: 400; margin: 6px 0 4px; letter-spacing: .2px; }
@@ -93,6 +93,7 @@
   .rot { transform: rotate(135deg); }
   .inc-actions { display: flex; justify-content: space-between; padding: 0 22px; }
   .inc-actions .cb { font-size: 15px; }
+  .diag { color: rgba(255,255,255,.5); font-size: 12px; margin-top: 8px; }
   .status-err { color: #ff9f0a; font-size: 14px; margin-top: 10px; -webkit-user-select: text; user-select: text; }
   .pulse { animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .55; } }
@@ -195,6 +196,7 @@
       <div class="nm" id="call-name">Mom</div>
       <div class="sub" id="call-status">calling…</div>
       <div class="status-err" id="call-err"></div>
+      <div class="diag" id="call-diag"></div>
     </div>
     <div>
       <div class="grid">
@@ -483,12 +485,28 @@ function primeAudio() {
   primed = { mic, ctx };
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function ensureRunning(ctx) {
+  if (ctx.state === "running") return true;
+  try { await Promise.race([ctx.resume(), sleep(500)]); } catch {}
+  return ctx.state === "running";
+}
+
 async function openAudio() {
   if (!primed) primeAudio();
-  const { mic, ctx } = primed; primed = null;
-  call.ctx = ctx;
+  let { mic, ctx } = primed; primed = null;
   call.stream = await mic;
-  if (ctx.state !== "running") await ctx.resume();
+  // iPhone quirk: a context created before the mic switches iOS into "call" mode can stay silent.
+  // If it isn't running after the mic is live, replace it (capturing pages are allowed to play audio).
+  if (!(await ensureRunning(ctx))) {
+    try { ctx.close(); } catch {}
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    await ensureRunning(ctx);
+  }
+  ctx.onstatechange = () => {
+    if (call.active && call.ctx === ctx && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {});
+  };
+  call.ctx = ctx;
   const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: "application/javascript" }));
   await ctx.audioWorklet.addModule(url); URL.revokeObjectURL(url);
   const src = ctx.createMediaStreamSource(call.stream);
@@ -516,6 +534,7 @@ function playPcm24k(b64) {
   const t = Math.max(ctx.currentTime + 0.03, call.nextTime, call.holdUntil);
   s.start(t); call.nextTime = t + buf.duration;
   call.sources.add(s); s.onended = () => call.sources.delete(s);
+  call.chunks++;
   if (!call.gotAudio) { call.gotAudio = true; onAnswered(t); }
 }
 
@@ -545,6 +564,12 @@ function connectGemini() {
     let m; try { m = JSON.parse(text); } catch { return; }
     if (m.setupComplete) {
       call.ready = true;
+      setTimeout(() => {
+        if (!call.active || call.ending || call.ws !== ws) return;
+        const st = call.ctx ? call.ctx.state : "none";
+        if (!call.gotAudio) $("call-diag").textContent = `Connected, waiting for voice… (audio ${st})`;
+        else if (st !== "running") $("call-diag").textContent = `Voice arriving but audio is ${st}. Tap the screen.`;
+      }, 6000);
       const kick = call.direction === "incoming"
         ? "[The call just connected — you called them. Greet them the way your persona naturally would, in one short sentence, then get to why you're calling.]"
         : "[Your phone is ringing and you just picked up. Answer it naturally in a few words.]";
@@ -601,7 +626,10 @@ function startRingtone() {
   } catch {}
   if (navigator.vibrate) navigator.vibrate([400, 200, 400, 2000, 400, 200, 400]);
 }
-function stopRingtone() { clearInterval(ringLoop); ringLoop = null; stopTones(); if (navigator.vibrate) navigator.vibrate(0); }
+function stopRingtone() {
+  clearInterval(ringLoop); ringLoop = null; stopTones(); if (navigator.vibrate) navigator.vibrate(0);
+  try { ringCtx && ringCtx.close(); } catch {} ringCtx = null;
+}
 
 /* ---------------- incoming flow ---------------- */
 let pendingTimer = null, pendingTick = null;
@@ -645,10 +673,10 @@ function requireKey() {
 /* ---------------- call lifecycle ---------------- */
 async function beginCall(c, direction) {
   Object.assign(call, { active: true, ending: false, caller: c, direction, ready: false, muted: false, gotAudio: false,
-    nextTime: 0, holdUntil: 0, startedAt: 0, usage: { prompt: 0, response: 0, turns: 0 } });
+    nextTime: 0, holdUntil: 0, startedAt: 0, chunks: 0, usage: { prompt: 0, response: 0, turns: 0 } });
   $("call-name").textContent = c.name; paintAvatar($("call-av"), c);
   $("call-bg").style.backgroundImage = c.photo ? `url(${c.photo})` : "";
-  $("call-err").textContent = "";
+  $("call-err").textContent = ""; $("call-diag").textContent = "";
   document.querySelectorAll("#v-call .cb").forEach((b) => b.classList.remove("active"));
   $("call-status").textContent = direction === "incoming" ? "00:00" : "calling…";
   $("call-status").classList.toggle("pulse", direction === "outgoing");
@@ -685,6 +713,7 @@ async function beginCall(c, direction) {
 }
 
 function onAnswered() {
+  $("call-diag").textContent = "";
   if (call.direction === "outgoing") {
     const wait = Math.max(0, (call.holdUntil - call.ctx.currentTime) * 1000);
     setTimeout(() => { if (call.active) { $("call-status").classList.remove("pulse"); startTimer(); } }, wait);
@@ -727,6 +756,7 @@ function recordUsage(seconds) {
 }
 
 /* ---------------- in-call buttons ---------------- */
+$("v-call").addEventListener("click", () => { if (call.ctx && call.ctx.state !== "running") call.ctx.resume().catch(() => {}); });
 $("b-end").onclick = () => endCall(false);
 $("b-mute").onclick = (e) => { call.muted = !call.muted; e.currentTarget.classList.toggle("active", call.muted); };
 // Cosmetic toggles — a web page can't switch audio outputs, but the screen should look normal.
